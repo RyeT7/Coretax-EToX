@@ -4,12 +4,13 @@ use crate::{
     application::services::{
         convertservice::ConvertService, createsessionservice::CreateSessionService,
         getxmlservice::GetXmlService, mapheadersservice::MapHeadersService,
-        uploadexcelservice::UploadExcelService, viewexcelservice::ViewExcelService,
-        viewheadersservice::ViewHeadersService,
+        memoryservice::MemoryService, uploadexcelservice::UploadExcelService,
+        viewexcelservice::ViewExcelService, viewheadersservice::ViewHeadersService,
     },
     infrastructure::adapters::outputs::{
         calamineexcelreader::CalamineExcelReader, customxmlwriter::CustomXMLWriter,
-        taurisessionrepository::TauriSessionRepository, uuidv4generator::Uuidv4Generator,
+        jsonmemoryrepository::JsonMemoryRepository, taurisessionrepository::TauriSessionRepository,
+        uuidv4generator::Uuidv4Generator,
     },
     state::appstate::AppState,
 };
@@ -26,6 +27,7 @@ pub fn run() {
     let excel_reader = Arc::new(CalamineExcelReader::new());
     let id_generator = Arc::new(Uuidv4Generator::new());
     let xml_writer = Arc::new(Mutex::new(CustomXMLWriter::new()));
+    let memory_repository = Arc::new(JsonMemoryRepository::new());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -48,6 +50,7 @@ pub fn run() {
                 xml_writer.clone(),
             ))),
             get_xml_use_case: Arc::new(GetXmlService::new(session_repository.clone())),
+            memory_use_case: Arc::new(MemoryService::new(memory_repository.clone())),
         })
         .invoke_handler(tauri::generate_handler![
             // Excel Controller
@@ -64,6 +67,10 @@ pub fn run() {
             // Get XML Controller
             infrastructure::adapters::inputs::getxmlcontroller::get_xml,
             infrastructure::adapters::inputs::getxmlcontroller::save_xml,
+            // Memory Controller
+            infrastructure::adapters::inputs::memorycontroller::load_memory,
+            infrastructure::adapters::inputs::memorycontroller::save_memory,
+            infrastructure::adapters::inputs::memorycontroller::default_memory_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

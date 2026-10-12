@@ -1,8 +1,16 @@
 import { ref, computed } from "vue";
 import { createSession, sessionId } from "../services/SessionService";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { dirname, join } from "@tauri-apps/api/path";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { uploadExcelFile, viewExcelTable } from "../services/ExcelService";
 import { getHeaders, mapHeaders, convert, saveXml } from "../services/ParseService";
+import {
+  defaultMemoryPath,
+  loadMemory,
+  saveMemory,
+  type Memory,
+} from "../services/MemoryService";
 
 export interface TagMapping {
   literal: string;
@@ -46,9 +54,117 @@ const goodServiceIdentifierColumn = ref("");
 const converting = ref(false);
 const conversionError = ref<string | null>(null);
 const conversionSuccess = ref(false);
+const savedXmlPath = ref<string | null>(null);
+
+const memoryPath = ref<string | null>(null);
+const memory = ref<Memory | null>(null);
+const memoryError = ref<string | null>(null);
+const memoryLoadFailed = ref(false);
 
 function errMsg(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function applyMemory() {
+  const saved = memory.value;
+  if (!saved) return;
+
+  const hasHeader = (column: string | null): column is string =>
+    !!column && headers.value.includes(column);
+
+  if (hasHeader(saved.invoice_number_column)) {
+    invoiceNumberColumn.value = saved.invoice_number_column;
+  }
+  if (hasHeader(saved.good_service_identifier_column)) {
+    goodServiceIdentifierColumn.value = saved.good_service_identifier_column;
+  }
+
+  for (const mapping of tagMappings.value) {
+    if (mapping.derived) continue;
+    const savedMapping = saved.tag_mappings[mapping.hierarchical];
+    if (!savedMapping) continue;
+
+    mapping.mappedColumn = hasHeader(savedMapping.mapped_column)
+      ? savedMapping.mapped_column
+      : null;
+    mapping.defaultValue = savedMapping.default_value ?? "";
+  }
+}
+
+function currentMappings(): Partial<Memory> {
+  const tag_mappings = { ...(memory.value?.tag_mappings ?? {}) };
+  for (const mapping of tagMappings.value) {
+    if (mapping.derived) continue;
+    tag_mappings[mapping.hierarchical] = {
+      mapped_column: mapping.mappedColumn,
+      default_value: mapping.defaultValue,
+    };
+  }
+
+  return {
+    invoice_number_column: invoiceNumberColumn.value,
+    good_service_identifier_column: goodServiceIdentifierColumn.value,
+    tag_mappings,
+  };
+}
+
+async function persistMemory(changes: Partial<Memory>) {
+  if (!memoryPath.value || memoryLoadFailed.value) return;
+
+  const next: Memory = {
+    invoice_number_column: "",
+    good_service_identifier_column: "",
+    tag_mappings: {},
+    last_excel_dir: null,
+    last_xml_dir: null,
+    ...memory.value,
+    ...changes,
+  };
+
+  try {
+    await saveMemory(memoryPath.value, next);
+    memory.value = next;
+    memoryError.value = null;
+  } catch (error) {
+    memoryError.value = errMsg(error);
+  }
+}
+
+async function loadMemoryFromPath() {
+  if (!memoryPath.value) return;
+
+  try {
+    memory.value = await loadMemory(memoryPath.value);
+    memoryError.value = null;
+    memoryLoadFailed.value = false;
+  } catch (error) {
+    memory.value = null;
+    memoryError.value = errMsg(error);
+    memoryLoadFailed.value = true;
+    return;
+  }
+
+  if (!memory.value) await persistMemory({});
+}
+
+async function revealMemoryFile() {
+  if (!memoryPath.value) return;
+
+  try {
+    await revealItemInDir(memoryPath.value);
+  } catch (error) {
+    memoryError.value = errMsg(error);
+  }
+}
+
+async function revealXmlFile() {
+  if (!savedXmlPath.value) return;
+
+  try {
+    await revealItemInDir(savedXmlPath.value);
+  } catch (error) {
+    conversionError.value = errMsg(error);
+  }
 }
 
 async function initSession() {
@@ -63,6 +179,13 @@ async function initSession() {
   } finally {
     loadingSession.value = false;
   }
+
+  try {
+    memoryPath.value = await defaultMemoryPath();
+    await loadMemoryFromPath();
+  } catch (error) {
+    memoryError.value = errMsg(error);
+  }
 }
 
 async function uploadFile() {
@@ -76,6 +199,7 @@ async function uploadFile() {
 
   try {
     const selected = await open({
+      defaultPath: memory.value?.last_excel_dir ?? undefined,
       filters: [{ name: "Excel", extensions: ["xlsx", "xls", "csv"] }],
     });
 
@@ -101,7 +225,11 @@ async function uploadFile() {
       goodServiceIdentifierColumn.value = "";
       conversionSuccess.value = false;
       conversionError.value = null;
+      savedXmlPath.value = null;
       uploaded.value = true;
+
+      applyMemory();
+      await persistMemory({ last_excel_dir: await dirname(selected) });
     }
   } catch (error) {
     uploadError.value = errMsg(error);
@@ -119,6 +247,7 @@ async function runConvert() {
   converting.value = true;
   conversionError.value = null;
   conversionSuccess.value = false;
+  savedXmlPath.value = null;
 
   try {
     await mapHeaders(
@@ -143,14 +272,18 @@ async function downloadXml() {
   }
 
   try {
+    const fileName = `converted-${new Date().toISOString().slice(0, 10)}.xml`;
+    const lastXmlDir = memory.value?.last_xml_dir;
     const path = await save({
-      defaultPath: `converted-${new Date().toISOString().slice(0, 10)}.xml`,
+      defaultPath: lastXmlDir ? await join(lastXmlDir, fileName) : fileName,
       filters: [{ name: "XML", extensions: ["xml"] }],
     });
 
     if (!path) return; // user cancelled
 
     await saveXml(sessionId.value, path);
+    savedXmlPath.value = path;
+    await persistMemory({ last_xml_dir: await dirname(path) });
   } catch (error) {
     conversionError.value = errMsg(error);
   }
@@ -171,6 +304,7 @@ const canProceed = computed(() => {
 
 function next() {
   if (canProceed.value && currentStep.value < steps.length) {
+    if (currentStep.value === 2) void persistMemory(currentMappings());
     currentStep.value++;
   }
 }
@@ -200,6 +334,11 @@ export function useConverter() {
     conversionError,
     conversionSuccess,
     sessionId,
+    savedXmlPath,
+    memoryPath,
+    memoryError,
+    revealMemoryFile,
+    revealXmlFile,
     mappingsValid,
     canProceed,
     initSession,

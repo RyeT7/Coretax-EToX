@@ -7,6 +7,8 @@ const {
   conversionSuccess,
   runConvert,
   downloadXml,
+  savedXmlPath,
+  revealXmlFile,
   tin,
   invoiceNumberColumn,
   goodServiceIdentifierColumn,
@@ -55,7 +57,21 @@ const {
     >
       {{ conversionError }}
     </p>
-    <p v-if="conversionSuccess" class="text-green-400 mt-3">
+    <div v-if="savedXmlPath" class="mt-3 text-sm">
+      <p class="text-green-400">XML saved to</p>
+      <div class="flex items-center gap-3">
+        <span class="font-mono text-xs text-gray-200 truncate select-all" :title="savedXmlPath">{{
+          savedXmlPath
+        }}</span>
+        <button
+          @click="revealXmlFile"
+          class="shrink-0 px-3 py-1 rounded-md border border-gray-600 text-gray-200 transition-colors hover:bg-gray-700"
+        >
+          Show in folder
+        </button>
+      </div>
+    </div>
+    <p v-else-if="conversionSuccess" class="text-green-400 mt-3">
       Conversion successful! Click “Download XML” to choose where to save the file.
     </p>
   </div>

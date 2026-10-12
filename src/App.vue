@@ -2,6 +2,7 @@
 import { onMounted } from "vue";
 import { useConverter } from "./composables/useConverter";
 import Stepper from "./components/Stepper.vue";
+import MemoryBar from "./components/MemoryBar.vue";
 import UploadStep from "./components/steps/UploadStep.vue";
 import MapStep from "./components/steps/MapStep.vue";
 import ConvertStep from "./components/steps/ConvertStep.vue";
@@ -28,6 +29,8 @@ onMounted(() => {
       </p>
 
       <Stepper :steps="steps" :current="currentStep" class="mb-8" />
+
+      <MemoryBar class="mb-4" />
 
       <div class="bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
         <Transition name="fade" mode="out-in">

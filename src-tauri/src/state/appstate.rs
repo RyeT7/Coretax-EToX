@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use crate::application::ports::inbound::{
     convertusecase::ConvertUseCase, createsessionusecase::CreateSessionUseCase,
     getxmlusecase::GetXmlUseCase, mapheadersusecase::MapHeadersUseCase,
-    uploadexcelusecase::UploadExcelUseCase, viewexcelusecase::ViewExcelUseCase,
-    viewheadersusecase::ViewHeadersUseCase,
+    memoryusecase::MemoryUseCase, uploadexcelusecase::UploadExcelUseCase,
+    viewexcelusecase::ViewExcelUseCase, viewheadersusecase::ViewHeadersUseCase,
 };
 
 pub struct AppState {
@@ -16,4 +16,5 @@ pub struct AppState {
     pub view_headers_use_case: Arc<dyn ViewHeadersUseCase + Send + Sync>,
     pub convert_use_case: Arc<Mutex<dyn ConvertUseCase + Send + Sync>>,
     pub get_xml_use_case: Arc<dyn GetXmlUseCase + Send + Sync>,
+    pub memory_use_case: Arc<dyn MemoryUseCase + Send + Sync>,
 }
